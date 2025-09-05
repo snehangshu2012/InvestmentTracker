@@ -127,12 +127,12 @@ class Investment extends HiveObject {
 
   // Calculate current value
   double getCurrentValue() {
-    print('=== InvestmentTile _getCurrentValue Debug ===');
+   /* print('=== InvestmentTile _getCurrentValue Debug ===');
     print('Investment name: $name');
     print('Is SIP: $isSip');
     print('Start Date: $startDate');
     print('Amount: $amount');
-    print('Additional Data: $additionalData');
+    print('Additional Data: $additionalData');*/
 
     switch (type) {
       case InvestmentType.fixedDeposit:

@@ -1,7 +1,6 @@
 // screens/auth_gate.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-//import 'package:investtrack_india/models/settings_model.dart';
 import '../providers/settings_provider.dart';
 import '../utils/biometric_helper.dart';
 
@@ -12,21 +11,22 @@ class AuthGate extends ConsumerStatefulWidget {
   ConsumerState<AuthGate> createState() => _AuthGateState();
 }
 
-// screens/auth_gate.dart
-
-// screens/auth_gate.dart
-
 class _AuthGateState extends ConsumerState<AuthGate>
     with WidgetsBindingObserver {
   bool _unlocked = false;
   bool _authInProgress = false;
   bool _initDone = false;
+  bool _biometricTried = false;
+  bool _biometricInFlight = false;
+   bool _justAuthenticated = false;
 
   @override
   void initState() {
     super.initState();
+    print('AuthGate: initState called');
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      print('AuthGate: PostFrameCallback - setting _initDone = true');
       _initDone = true;
       _runAuth();
     });
@@ -34,81 +34,151 @@ class _AuthGateState extends ConsumerState<AuthGate>
 
   @override
   Widget build(BuildContext context) {
-    if (_unlocked) return widget.child;
+    print('AuthGate: build called - _unlocked: $_unlocked, _authInProgress: $_authInProgress');
+    
+    if (_unlocked) {
+      print('AuthGate: Showing child widget (app unlocked)');
+      return widget.child;
+    }
 
     return Scaffold(
       body: Center(
-        child: _authInProgress
-            ? const CircularProgressIndicator()
-            : ElevatedButton(
-                onPressed: _runAuth,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_authInProgress) ...[
+              const CircularProgressIndicator(),
+              const SizedBox(height: 20),
+              const Text('Authenticating...'),
+            ] else ...[
+              const Icon(Icons.lock, size: 64, color: Colors.grey),
+              const SizedBox(height: 20),
+              const Text('App is locked'),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  print('AuthGate: Unlock button pressed');
+                  // Reset flags for retry
+                  _biometricTried = false;
+                  _runAuth();
+                },
                 child: const Text('Unlock'),
               ),
+            ],
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
 
-Future<void> _runAuth() async {
-  if (_authInProgress || !_initDone) return;
-  _authInProgress = true;
-  setState(() {});
+  Future<void> _runAuth() async {
+    print('AuthGate: _runAuth called');
+    if (_authInProgress || !_initDone) {
+      print('AuthGate: Skipping auth - authInProgress: $_authInProgress, initDone: $_initDone');
+      return;
+    }
 
-  final s = ref.read(settingsProvider);
-  try {
-    // 1. Biometric once
-    if (s.biometricEnabled) {
-      final ok = await BiometricHelper.authenticate(
-        localizedReason: 'Authenticate to access your investments',
-        biometricOnly: false, // system prompt + fallback
-      );
-      if (ok) {
+    setState(() => _authInProgress = true);
+    print('AuthGate: Starting authentication process');
+
+    final s = ref.read(settingsProvider);
+    print('AuthGate: Settings - biometric: ${s.biometricEnabled}, pin: ${s.pinEnabled}');
+
+    try {
+      // If no security enabled, unlock immediately
+      if (!s.biometricEnabled && !s.pinEnabled) {
+        print('AuthGate: No security enabled, unlocking immediately');
         _unlock();
         return;
       }
-    }
 
-    // 2. PIN once
-    if (s.pinEnabled) {
-      final ok = await _showPinDialog(s.userPin);
-      if (ok) {
-        _unlock();
-        return;
+      // Try biometric once per launch
+      if (s.biometricEnabled && !_biometricTried) {
+        print('AuthGate: Attempting biometric authentication');
+        _biometricTried = true;
+        _biometricInFlight = true;
+        
+        final ok = await BiometricHelper.authenticate(
+          localizedReason: 'Authenticate to access your investments',
+          biometricOnly: false,
+        );
+        
+        _biometricInFlight = false;
+        print('AuthGate: Biometric result: $ok');
+        
+        if (ok) {
+          print('AuthGate: Biometric successful, unlocking');
+          _unlock();
+          return;
+        }
       }
-    }
 
-    // 3. Neither succeeded: remain locked but do NOT loop back
-    // Show a message so user can manually retry
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Authentication failed. Tap Unlock to try again.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      // Try PIN
+      if (s.pinEnabled) {
+        print('AuthGate: Attempting PIN authentication');
+        final ok = await _showPinDialog(s.userPin);
+        print('AuthGate: PIN authentication result: $ok');
+        
+        if (ok) {
+          print('AuthGate: PIN successful, unlocking');
+          _unlock();
+          return;
+        }
+      }
+
+      // Neither succeeded
+      print('AuthGate: Authentication failed');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Authentication failed. Tap Unlock to try again.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      print('AuthGate: Error during authentication: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _authInProgress = false);
+      print('AuthGate: Auth process finished, _authInProgress = false');
     }
-  } catch (e) {
-    // On unexpected error, remain locked but show error
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error during authentication: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  } finally {
-    _authInProgress = false;
-    setState(() {});
   }
-}
 
-  void _unlock() {
-    setState(() {
-      _unlocked = true;
-    });
+void _unlock() {
+    print('AuthGate: _unlock() called - setting _unlocked = true');
+    if (mounted) {
+      setState(() {
+        _unlocked = true;
+        _justAuthenticated = true; // Set flag when we unlock
+      });
+      print('AuthGate: State updated, _unlocked = $_unlocked');
+      
+      // Reset the flag after a short delay
+      Future.delayed(const Duration(seconds: 2), () {
+        _justAuthenticated = false;
+      });
+    } else {
+      print('AuthGate: Widget not mounted, cannot setState');
+    }
   }
 
   Future<bool> _showPinDialog(String? saved) async {
+    print('AuthGate: Showing PIN dialog, expected PIN: $saved');
+    
+    if (!mounted) {
+      print('AuthGate: Not mounted, cannot show dialog');
+      return false;
+    }
+
     final ctrl = TextEditingController();
     final input = await showDialog<String>(
       context: context,
@@ -120,37 +190,79 @@ Future<void> _runAuth() async {
           obscureText: true,
           keyboardType: TextInputType.number,
           maxLength: 4,
+          autofocus: true,
           decoration: const InputDecoration(border: OutlineInputBorder()),
+          onSubmitted: (value) => Navigator.pop(context, value),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, null), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () {
+              print('AuthGate: PIN dialog cancelled');
+              Navigator.pop(context, null);
+            },
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(context, ctrl.text), child: const Text('Unlock')),
+            onPressed: () {
+              print('AuthGate: PIN dialog submitted with: ${ctrl.text}');
+              Navigator.pop(context, ctrl.text);
+            },
+            child: const Text('Unlock'),
+          ),
         ],
       ),
     );
-    if (input == null) return false;
-    if (input == saved) return true;
 
-    // Wrong PIN
-    if (mounted) {
-      await showDialog(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Incorrect PIN'),
-          content: const Text('Wrong PIN, please try again.'),
-          actions: [ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Retry'))],
-        ),
-      );
+    print('AuthGate: PIN dialog returned: $input');
+
+    if (input == null) {
+      print('AuthGate: PIN dialog was cancelled');
+      return false;
     }
-    return false;
+
+    if (input == saved) {
+      print('AuthGate: PIN is correct');
+      return true;
+    } else {
+      print('AuthGate: PIN is incorrect - entered: "$input", expected: "$saved"');
+      if (mounted) {
+        await showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: const Text('Incorrect PIN'),
+            content: Text('Wrong PIN. Entered: "$input", Expected: "$saved"'), // Debug info
+            actions: [
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        );
+      }
+      return false;
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    print('AuthGate: App lifecycle changed to: $state');
+    
+    if (_biometricInFlight) {
+      print('AuthGate: Biometric in flight, ignoring lifecycle change');
+      return;
+    }
+    
+    // Don't re-lock if we just authenticated
+    if (_justAuthenticated) {
+      print('AuthGate: Just authenticated, ignoring resume');
+      return;
+    }
+    
     if (state == AppLifecycleState.resumed && _unlocked) {
       final s = ref.read(settingsProvider);
       if (s.biometricEnabled || s.pinEnabled) {
+        print('AuthGate: App resumed, re-locking');
         setState(() => _unlocked = false);
       }
     }
@@ -158,6 +270,7 @@ Future<void> _runAuth() async {
 
   @override
   void dispose() {
+    print('AuthGate: dispose called');
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
