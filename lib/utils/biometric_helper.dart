@@ -28,32 +28,27 @@ class BiometricHelper {
     }
   }
 
-  static Future<bool> authenticate({
-    required String localizedReason,
-    bool biometricOnly = false,
-  }) async {
-    try {
-      final bool isAvailable = await BiometricHelper.isAvailable();
-      if (!isAvailable) {
-        print('Biometrics not available on device');
-        return false;
-      }
-
-      final bool isAuthenticated = await _localAuth.authenticate(
-        localizedReason: localizedReason,
-        options: AuthenticationOptions(
-          biometricOnly: biometricOnly,
-          stickyAuth: true,
-        ),
-      );
-
-      print('Authentication result: $isAuthenticated');
-      return isAuthenticated;
-    } on PlatformException catch (e) {
-      print('Biometric authentication error: $e');
-      return false;
-    }
+static Future<bool> authenticate({
+  required String localizedReason,
+  bool biometricOnly = false, // true = no device passcode fallback
+}) async {
+  try {
+    final available = await isAvailable();
+    if (!available) return false;
+    final ok = await _localAuth.authenticate(
+      localizedReason: localizedReason,
+      options: const AuthenticationOptions(
+        biometricOnly: false,    // keep false if you want OS passcode fallback
+        stickyAuth: false,       // CRITICAL: avoid auto re-prompt loop
+        useErrorDialogs: true,
+      ),
+    );
+    return ok;
+  } on PlatformException catch (e) {
+    print('Biometric auth error: $e');
+    return false;
   }
+}
 
   static String getBiometricTypeString(List<BiometricType> types) {
     if (types.contains(BiometricType.face)) {

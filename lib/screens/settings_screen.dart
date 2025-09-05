@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/settings_provider.dart';
 import '../utils/biometric_helper.dart';
-import 'package:local_auth/local_auth.dart'; 
+import 'package:local_auth/local_auth.dart';
 //import '../services/local_db_service.dart';
 import '../models/settings_model.dart';
 
@@ -183,7 +183,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
   }
 
-   Widget _buildSecuritySection(AppSettings settings) {
+  Widget _buildSecuritySection(AppSettings settings) {
     return Card(
       elevation: 4,
       child: Padding(
@@ -201,102 +201,100 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
 
           // Biometric Toggle
-         FutureBuilder<List<BiometricType>>(
-  future: BiometricHelper.getAvailableBiometrics(),
-  builder: (context, snap) {
-    final availableTypes = snap.data ?? [];
-    final isAvailable = availableTypes.isNotEmpty;
-    final label = isAvailable
-      ? availableTypes.contains(BiometricType.face)
-          ? 'Use Face ID'
-          : 'Use Touch ID'
-      : 'Biometric not available';
+          // Biometric Toggle (no automatic disabling)
+          FutureBuilder<List<BiometricType>>(
+            future: BiometricHelper.getAvailableBiometrics(),
+            builder: (context, snap) {
+              final types = snap.data ?? [];
+              final isAvailable = types.isNotEmpty;
+              final label = isAvailable
+                  ? (types.contains(BiometricType.face)
+                      ? 'Use Face ID'
+                      : types.contains(BiometricType.fingerprint)
+                          ? 'Use Touch ID'
+                          : 'Use Biometric')
+                  : 'Biometric not available';
 
-    // Auto-disable stored setting if none available
-    if (!isAvailable && settings.biometricEnabled) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(settingsProvider.notifier).updateBiometric(false);
-      });
-    }
-
-    return SwitchListTile(
-      title: Text(label),
-      subtitle: Text(isAvailable
-          ? 'Unlock with device biometrics'
-          : 'No biometric sensor'),
-      value: settings.biometricEnabled && isAvailable,
-      onChanged: isAvailable
-          ? (value) async {
-              if (value) {
-                // Disable PIN if active
-                if (settings.pinEnabled) {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('Disable PIN?'),
-                      content: const Text(
-                          'Enabling biometrics will disable PIN lock. Continue?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('OK'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (ok != true) return;
-                  await ref
-                      .read(settingsProvider.notifier)
-                      .updatePin(false);
-                }
-                // Test biometric before enabling
-                final enrolled = await BiometricHelper.authenticate(
-                  localizedReason:
-                      'Confirm to enable biometric authentication',
-                );
-                if (enrolled) {
-                  await ref
-                      .read(settingsProvider.notifier)
-                      .updateBiometric(true);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content:
-                            Text('Biometric authentication enabled'),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  }
-                }
-              } else {
-                await ref
-                    .read(settingsProvider.notifier)
-                    .updateBiometric(false);
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content:
-                          Text('Biometric authentication disabled'),
-                      backgroundColor: Colors.blue,
-                    ),
-                  );
-                }
-              }
-            }
-          : null,
-      secondary: Icon(
-        Icons.fingerprint,
-        color: isAvailable ? null : Colors.grey,
-      ),
-    );
-  },
-),
+              return SwitchListTile(
+                title: Text(label),
+                subtitle: Text(isAvailable
+                    ? 'Unlock with device biometrics'
+                    : 'No biometric sensor detected'),
+                value: settings.biometricEnabled && isAvailable,
+                onChanged: isAvailable
+                    ? (value) async {
+                        if (value) {
+                          if (settings.pinEnabled) {
+                            final ok = await showDialog<bool>(
+                              context: context,
+                              builder: (_) => AlertDialog(
+                                title: const Text('Disable PIN?'),
+                                content: const Text(
+                                    'Enabling biometrics will disable PIN lock. Continue?'),
+                                actions: [
+                                  TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, false),
+                                      child: const Text('Cancel')),
+                                  ElevatedButton(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      child: const Text('OK')),
+                                ],
+                              ),
+                            );
+                            if (ok != true) return;
+                            await ref
+                                .read(settingsProvider.notifier)
+                                .updatePin(false);
+                          }
+                          final enrolled = await BiometricHelper.authenticate(
+                            localizedReason:
+                                'Confirm to enable biometric authentication',
+                          );
+                          if (enrolled) {
+                            await ref
+                                .read(settingsProvider.notifier)
+                                .updateBiometric(true);
+                            if (mounted) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(const SnackBar(
+                                content:
+                                    Text('Biometric authentication enabled'),
+                                backgroundColor: Colors.green,
+                              ));
+                            }
+                          } else {
+                            if (mounted) {
+                              ScaffoldMessenger.of(context)
+                                  .showSnackBar(const SnackBar(
+                                content: Text('Biometric setup cancelled'),
+                                backgroundColor: Colors.orange,
+                              ));
+                            }
+                          }
+                        } else {
+                          await ref
+                              .read(settingsProvider.notifier)
+                              .updateBiometric(false);
+                          if (mounted) {
+                            ScaffoldMessenger.of(context)
+                                .showSnackBar(const SnackBar(
+                              content:
+                                  Text('Biometric authentication disabled'),
+                              backgroundColor: Colors.blue,
+                            ));
+                          }
+                        }
+                      }
+                    : null,
+                secondary: Icon(Icons.fingerprint,
+                    color: isAvailable ? null : Colors.grey),
+              );
+            },
+          ),
           const Divider(),
-         SwitchListTile(
+          SwitchListTile(
             title: const Text('PIN Lock'),
             subtitle: const Text('Use a 4-digit PIN'),
             value: settings.pinEnabled,
@@ -309,8 +307,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     builder: (_) => AlertDialog(
                       title: const Text('Disable Biometric?'),
                       content: const Text(
-                        'Enabling PIN will disable biometrics. Continue?'
-                      ),
+                          'Enabling PIN will disable biometrics. Continue?'),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
@@ -325,15 +322,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   );
                   if (ok != true) return;
                   await ref
-                    .read(settingsProvider.notifier)
-                    .updateBiometric(false);
+                      .read(settingsProvider.notifier)
+                      .updateBiometric(false);
                 }
                 // Show PIN setup dialog
                 _showPinSetupDialog();
               } else {
-                await ref
-                  .read(settingsProvider.notifier)
-                  .updatePin(false);
+                await ref.read(settingsProvider.notifier).updatePin(false);
               }
             },
             secondary: const Icon(Icons.pin),
