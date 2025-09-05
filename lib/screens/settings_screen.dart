@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:investtrack_india/providers/investment_provider.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import '../providers/settings_provider.dart';
+import '../providers/settings_provider.dart' hide localDbServiceProvider;
 import '../utils/biometric_helper.dart';
 import 'package:local_auth/local_auth.dart';
 import '../models/settings_model.dart';
@@ -451,49 +452,53 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
-  void _showClearDataDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear All Data'),
-        content: const Text(
-            'This will permanently delete all your investments and settings.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () async {
-              try {
-                final dbService = ref.read(localDbServiceProvider);
-                await dbService.clearAllData();
-                ref.invalidate(settingsProvider);
-                Navigator.pop(context);
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('All data cleared successfully'),
-                    backgroundColor: Colors.green,
-                  ),
-                );
-              } catch (e) {
-                if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Error clearing data: $e'),
-                    backgroundColor: Colors.red,
-                  ),
-                );
-              }
-            },
-            child: const Text('Clear All Data'),
-          ),
-        ],
-      ),
-    );
-  }
+void _showClearDataDialog() {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Clear All Data'),
+      content: const Text(
+          'This will permanently delete all your investments and settings.'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: () async {
+            try {
+              final dbService = ref.read(localDbServiceProvider);
+              await dbService.clearAllData();
+
+              // Invalidate all relevant providers to refresh UI/state
+              ref.invalidate(settingsProvider);
+              ref.invalidate(investmentListProvider); // Replace with your actual investments provider
+
+              Navigator.pop(context);
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('All data cleared successfully'),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Error clearing  $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          },
+          child: const Text('Clear All Data'),
+        ),
+      ],
+    ),
+  );
+}
 
   void _showHelpDialog() {
     showDialog(

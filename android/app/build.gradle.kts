@@ -37,6 +37,19 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+     applicationVariants.all {
+        outputs.all {
+            // Cast output to the appropriate type to access `outputFileName`
+            val outputImpl = this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
+            val appName = "investtrack_india"
+            val version = defaultConfig.versionName
+            val buildTypeName = name
+
+            outputImpl.outputFileName = "$appName-$version-$buildTypeName.apk"
+        }
+    }
 }
 
 flutter {
