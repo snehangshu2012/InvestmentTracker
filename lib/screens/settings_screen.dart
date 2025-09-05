@@ -4,8 +4,9 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../providers/settings_provider.dart';
 import '../utils/biometric_helper.dart';
 import 'package:local_auth/local_auth.dart';
-//import '../services/local_db_service.dart';
 import '../models/settings_model.dart';
+import '../utils/export_helper.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -158,26 +159,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             secondary:
                 Icon(settings.isDarkTheme ? Icons.dark_mode : Icons.light_mode),
           ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text('Compact View'),
-            subtitle: const Text('Show more information in less space'),
-            value: settings.compactView,
-            onChanged: (value) {
-              ref.read(settingsProvider.notifier).updateCompactView(value);
-            },
-            secondary: const Icon(Icons.view_compact),
-          ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text('Notifications'),
-            subtitle: const Text('Receive app notifications'),
-            value: settings.notificationsEnabled,
-            onChanged: (value) {
-              ref.read(settingsProvider.notifier).updateNotifications(value);
-            },
-            secondary: const Icon(Icons.notifications),
-          ),
         ]),
       ),
     );
@@ -208,22 +189,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               final types = snap.data ?? [];
               final isAvailable = types.isNotEmpty;
               final label = isAvailable
-                  ? (types.contains(BiometricType.face)
-                      ? 'Use Face ID'
-                      : types.contains(BiometricType.fingerprint)
-                          ? 'Use Touch ID'
-                          : 'Use Biometric')
+                  ? BiometricHelper.getBiometricTypeString(types)
                   : 'Biometric not available';
 
               return SwitchListTile(
-                title: Text(label),
+                title: Text('Use $label'),
                 subtitle: Text(isAvailable
-                    ? 'Unlock with device biometrics'
+                    ? 'Unlock with $label'
                     : 'No biometric sensor detected'),
                 value: settings.biometricEnabled && isAvailable,
                 onChanged: isAvailable
-                    ? (value) async {
-                        if (value) {
+                    ? (on) async {
+                        if (on) {
+                          // Disable PIN if active
                           if (settings.pinEnabled) {
                             final ok = await showDialog<bool>(
                               context: context,
@@ -246,31 +224,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             if (ok != true) return;
                             await ref
                                 .read(settingsProvider.notifier)
-                                .updatePin(false);
+                                .updatePin(false, null);
                           }
+                          // Enforce biometric-only auth here
                           final enrolled = await BiometricHelper.authenticate(
-                            localizedReason:
-                                'Confirm to enable biometric authentication',
+                            localizedReason: 'Confirm to enable $label',
+                            biometricOnly: true,
                           );
                           if (enrolled) {
                             await ref
                                 .read(settingsProvider.notifier)
                                 .updateBiometric(true);
                             if (mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(const SnackBar(
-                                content:
-                                    Text('Biometric authentication enabled'),
-                                backgroundColor: Colors.green,
-                              ));
-                            }
-                          } else {
-                            if (mounted) {
-                              ScaffoldMessenger.of(context)
-                                  .showSnackBar(const SnackBar(
-                                content: Text('Biometric setup cancelled'),
-                                backgroundColor: Colors.orange,
-                              ));
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                    content: Text('$label enabled'),
+                                    backgroundColor: Colors.green),
+                              );
                             }
                           }
                         } else {
@@ -278,12 +248,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               .read(settingsProvider.notifier)
                               .updateBiometric(false);
                           if (mounted) {
-                            ScaffoldMessenger.of(context)
-                                .showSnackBar(const SnackBar(
-                              content:
-                                  Text('Biometric authentication disabled'),
-                              backgroundColor: Colors.blue,
-                            ));
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('Biometric disabled'),
+                                  backgroundColor: Colors.blue),
+                            );
                           }
                         }
                       }
@@ -467,15 +436,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _exportData() async {
     try {
-      final dbService = ref.read(localDbServiceProvider);
-      await dbService.exportAllData();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Data export not implemented'),
-          backgroundColor: Colors.blue,
-        ),
-      );
+      final exportMap = ref.read(localDbServiceProvider).exportAllData();
+      final investments =
+          (exportMap['investments'] as List).cast<Map<String, dynamic>>();
+      await ExportHelper.exportInvestmentsCsv(investments);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -582,15 +546,36 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
+              final feedback = feedbackController.text.trim();
+              if (feedback.isEmpty) {
+                // Prevent empty feedback
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Please enter some feedback before sending.'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+
               Navigator.pop(context);
-              if (!mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Thank you for your feedback!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+
+              final subject = Uri.encodeComponent('InvestTrack Feedback');
+              final body = Uri.encodeComponent(feedback);
+              final mailto = 'mailto:support@investmenttracker.com'
+                  '?subject=$subject&body=$body';
+
+              if (await canLaunchUrl(Uri.parse(mailto))) {
+                await launchUrl(Uri.parse(mailto));
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Could not open email client.'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
             },
             child: const Text('Send'),
           ),
