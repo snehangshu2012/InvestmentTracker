@@ -1,3 +1,37 @@
 /build/
 /*.apk
 /*.ipa
+# Flutter/Dart/Pub
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+
+# Android
+android/app/build/
+*.apk
+*.aar
+*.jks
+
+# iOS
+ios/Pods/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/App.framework
+
+# Xcode
+*.xcworkspace
+*.xcuserstate
+DerivedData/
+
+# Flutter build
+build/
+*.dill
+*.apk
+*.so
+
+# Flutter build
+build/
+android/build/
+ios/build/
